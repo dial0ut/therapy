@@ -6,6 +6,8 @@ from time import sleep
 import pygame
 import zmq
 
+import python_libinput
+
 FPS = 30
 RUNNING = True
 PATIENTS = {}
@@ -38,7 +40,7 @@ class ZmqEvent:
         return f"{self.topic}:{self.name}:Origin:{x}:{y}"
 
 
-def handle_pygame_events(name, pub, ze):
+def handle_pygame_events(name, pub, ze, screen):
     global RUNNING
 
     keydown_up = False
@@ -46,69 +48,100 @@ def handle_pygame_events(name, pub, ze):
     keydown_right = False
     keydown_left = False
 
+    li = python_libinput.libinput()
+    assert li.start()
+
     print("Listening to pygame events...")
     while RUNNING:
-        event = pygame.event.wait()
+        # Non-blocking polling of events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                print("Received quit!")
+                RUNNING = False
+                break
 
-        if event.type == pygame.QUIT:
-            print("Received quit!")
-            RUNNING = False
-            break
+            if event.type == pygame.MOUSEMOTION:
+                w_x, w_y = event.pos
+                PATIENTS[name].wacom_x = w_x
+                PATIENTS[name].wacom_y = w_y
+                if PATIENTS[name].down:
+                    PATIENTS[name].mouse_track[-1].append(event.pos)
+                msg = ze.mouse_motion(w_x, w_y)
+                pub.send_string(msg)
 
-        if event.type == pygame.MOUSEMOTION:
-            w_x, w_y = event.pos
-            PATIENTS[name].wacom_x = w_x
-            PATIENTS[name].wacom_y = w_y
-            if PATIENTS[name].down:
-                PATIENTS[name].mouse_track[-1].append(event.pos)
-            msg = ze.mouse_motion(w_x, w_y)
-            pub.send_string(msg)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                PATIENTS[name].down = True
+                PATIENTS[name].mouse_track.append([])
+                msg = ze.mouse_down()
+                pub.send_string(msg)
 
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            PATIENTS[name].down = True
-            PATIENTS[name].mouse_track.append([])
-            msg = ze.mouse_down()
-            pub.send_string(msg)
+            elif event.type == pygame.MOUSEBUTTONUP:
+                PATIENTS[name].down = False
+                msg = ze.mouse_up()
+                pub.send_string(msg)
 
-        elif event.type == pygame.MOUSEBUTTONUP:
-            PATIENTS[name].down = False
-            msg = ze.mouse_up()
-            pub.send_string(msg)
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP:
+                    keydown_up = True
+                elif event.key == pygame.K_DOWN:
+                    keydown_down = True
+                elif event.key == pygame.K_RIGHT:
+                    keydown_right = True
+                elif event.key == pygame.K_LEFT:
+                    keydown_left = True
 
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_UP:
-                keydown_up = True
-            elif event.key == pygame.K_DOWN:
-                keydown_down = True
-            elif event.key == pygame.K_RIGHT:
-                keydown_right = True
-            elif event.key == pygame.K_LEFT:
-                keydown_left = True
+            elif event.type == pygame.KEYUP:
+                if event.key == pygame.K_UP:
+                    keydown_up = False
+                elif event.key == pygame.K_DOWN:
+                    keydown_down = False
+                elif event.key == pygame.K_RIGHT:
+                    keydown_right = False
+                elif event.key == pygame.K_LEFT:
+                    keydown_left = False
 
-        elif event.type == pygame.KEYUP:
-            if event.key == pygame.K_UP:
-                keydown_up = False
-            elif event.key == pygame.K_DOWN:
-                keydown_down = False
-            elif event.key == pygame.K_RIGHT:
-                keydown_right = False
-            elif event.key == pygame.K_LEFT:
-                keydown_left = False
+            """ Origin is a bit buggy
+            if keydown_up:
+                PATIENTS[name].origin_y -= 20
+            if keydown_down:
+                PATIENTS[name].origin_y += 20
+            if keydown_left:
+                PATIENTS[name].origin_x -= 20
+            if keydown_right:
+                PATIENTS[name].origin_x += 20
 
-        """ Origin is a bit buggy
-        if keydown_up:
-            PATIENTS[name].origin_y -= 20
-        if keydown_down:
-            PATIENTS[name].origin_y += 20
-        if keydown_left:
-            PATIENTS[name].origin_x -= 20
-        if keydown_right:
-            PATIENTS[name].origin_x += 20
+            if keydown_up or keydown_down or keydown_left or keydown_right:
+                msg = ze.origin(PATIENTS[name].origin_x, PATIENTS[name].origin_y)
+                pub.send_string(msg)
+            """
 
-        if keydown_up or keydown_down or keydown_left or keydown_right:
-            msg = ze.origin(PATIENTS[name].origin_x, PATIENTS[name].origin_y)
-            pub.send_string(msg)
-        """
+        events = li.poll()
+        for event in events:
+            # tip up / down
+            if event.type == 0:
+                if event.tip_is_down:
+                    PATIENTS[name].down = True
+                    PATIENTS[name].mouse_track.append([])
+                    msg = ze.mouse_down()
+                    pub.send_string(msg)
+                else:
+                    PATIENTS[name].down = False
+                    msg = ze.mouse_up()
+                    pub.send_string(msg)
+            # cursor move
+            elif event.type == 1:
+                x, y = event.x, event.y
+                size = screen.get_rect()
+                w, h = size.w, size.h
+                w_x, w_y = x * w, y * h
+                PATIENTS[name].wacom_x = w_x
+                PATIENTS[name].wacom_y = w_y
+                if PATIENTS[name].down:
+                    PATIENTS[name].mouse_track[-1].append((w_x, w_y))
+                msg = ze.mouse_motion(w_x, w_y)
+                pub.send_string(msg)
+
+        sleep(0.1)
 
     pub.close()
 
@@ -172,7 +205,7 @@ def main(frontend, backend, name, topic):
 
     ze = ZmqEvent(topic, name)
 
-    pygame_event_thread = Thread(target=handle_pygame_events, args=(name, pub, ze))
+    pygame_event_thread = Thread(target=handle_pygame_events, args=(name, pub, ze, screen))
     zmq_event_thread = Thread(target=handle_zmq_events, args=(name, sub))
 
     pygame_event_thread.start()
