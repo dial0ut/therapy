@@ -206,7 +206,7 @@ def handle_libinput_events(name, pub, ze, screen):
                     brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
                     PATIENTS[name].mouse_track[-1].append((brush, (w_x, w_y)))
                 pub.send_string(ze.mouse_motion(w_x, w_y))
-        sleep(0.1)
+        li.wait()
 
     pub.close()
 

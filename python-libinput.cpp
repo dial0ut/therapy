@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <poll.h>
 #include <string.h>
 #include <unistd.h>
 #include <libinput.h>
@@ -42,19 +43,26 @@ public:
     ~libinput();
 
     bool start();
-    std::vector<event> poll();
+    std::vector<event> do_poll();
+    int wait();
 
 private:
     //libinput_device *device;
     udev *ud = NULL;
     libinput *li = NULL;
+    pollfd fd;
 };
 
 libinput::libinput() {
+    fd.fd = -1;
+    fd.events = POLLIN;
+    fd.revents = 0;
 }
 libinput::~libinput() {
     libinput_unref(li);
     udev_unref(ud);
+    close(fd.fd);
+    fd.fd = -1;
 }
 
 bool libinput::start() {
@@ -90,10 +98,12 @@ bool libinput::start() {
     }
     */
 
+    fd.fd = libinput_get_fd(li);
+
     return true;
 }
 
-std::vector<event> libinput::poll() {
+std::vector<event> libinput::do_poll() {
 	struct libinput_event *ev;
     struct libinput_event_tablet_tool *t = NULL;
 
@@ -120,10 +130,10 @@ std::vector<event> libinput::poll() {
 
                 events.push_back(event { 0, tip_is_down, 0, 0 });
 
-                if (tip_is_down)
+                /*if (tip_is_down)
                     puts("tip");
                 else
-                    puts("tip up");
+                    puts("tip up");*/
                 break;
             }
             case LIBINPUT_EVENT_TABLET_TOOL_AXIS: {
@@ -134,7 +144,7 @@ std::vector<event> libinput::poll() {
                 double x = libinput_event_tablet_tool_get_x_transformed(t, 1.0);
                 double y = libinput_event_tablet_tool_get_y_transformed(t, 1.0);
 
-                printf("%.4f %.4f\n", x, y);
+                //printf("%.4f %.4f\n", x, y);
                 events.push_back(event { 1, false, x, y });
 
                 break;
@@ -149,12 +159,17 @@ std::vector<event> libinput::poll() {
     return events;
 }
 
+int libinput::wait() {
+    return poll(&fd, 1, -1);
+}
+
 namespace py = pybind11;
 PYBIND11_MODULE(python_libinput, m) {
     py::class_<libinput>(m, "libinput")
         .def(py::init<>())
         .def("start", &libinput::start)
-        .def("poll", &libinput::poll)
+        .def("poll", &libinput::do_poll)
+        .def("wait", &libinput::wait)
     ;
     py::class_<event>(m, "event")
         .def_readonly("type", &event::type)
