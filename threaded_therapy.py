@@ -55,7 +55,7 @@ class ZmqEvent:
         return f"{self.topic}:{self.name}:SetSize:{size}"
 
 
-def handle_pygame_events(name, pub, ze, screen):
+def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
     global RUNNING
 
     keydown_up = False
@@ -63,110 +63,126 @@ def handle_pygame_events(name, pub, ze, screen):
     keydown_right = False
     keydown_left = False
 
+    print("Listening to pygame events...")
+    while RUNNING:
+        event = pygame.event.wait()
+
+        if event.type == pygame.QUIT:
+            print("Received quit!")
+            RUNNING = False
+            break
+
+        elif event.type == pygame.MOUSEMOTION:
+            if is_libbinput_enabled:
+                continue
+
+            w_x, w_y = event.pos
+            PATIENTS[name].wacom_x = w_x
+            PATIENTS[name].wacom_y = w_y
+            if PATIENTS[name].down:
+                brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
+                PATIENTS[name].mouse_track[-1].append(event.pos)
+            pub.send_string(ze.mouse_motion(w_x, w_y))
+
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if is_libbinput_enabled:
+                continue
+
+            PATIENTS[name].down = True
+            PATIENTS[name].mouse_track.append([])
+            pub.send_string(ze.mouse_down())
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if is_libbinput_enabled:
+                continue
+
+            PATIENTS[name].down = False
+            pub.send_string(ze.mouse_up())
+
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP:
+                keydown_up = True
+            elif event.key == pygame.K_DOWN:
+                keydown_down = True
+            elif event.key == pygame.K_RIGHT:
+                keydown_right = True
+            elif event.key == pygame.K_LEFT:
+                keydown_left = True
+
+            elif event.key == pygame.K_0:
+                PATIENTS[name].brush_color = CLR_BLACK
+                pub.send_string(ze.set_color(CLR_BLACK))
+            elif event.key == pygame.K_1:
+                PATIENTS[name].brush_color = CLR_WHITE
+                pub.send_string(ze.set_color(CLR_WHITE))
+            elif event.key == pygame.K_2:
+                PATIENTS[name].brush_color = CLR_RED
+                pub.send_string(ze.set_color(CLR_RED))
+            elif event.key == pygame.K_3:
+                PATIENTS[name].brush_color = CLR_GREEN
+                pub.send_string(ze.set_color(CLR_GREEN))
+            elif event.key == pygame.K_4:
+                PATIENTS[name].brush_color = CLR_CYAN
+                pub.send_string(ze.set_color(CLR_CYAN))
+            elif event.key == pygame.K_5:
+                PATIENTS[name].brush_color = CLR_YELLOW
+                pub.send_string(ze.set_color(CLR_YELLOW))
+
+            elif event.key == pygame.K_q:
+                PATIENTS[name].brush_size = 1
+                pub.send_string(ze.set_size(1))
+            elif event.key == pygame.K_w:
+                PATIENTS[name].brush_size = 2
+                pub.send_string(ze.set_size(2))
+            elif event.key == pygame.K_e:
+                PATIENTS[name].brush_size = 3
+                pub.send_string(ze.set_size(3))
+            elif event.key == pygame.K_r:
+                PATIENTS[name].brush_size = 4
+                pub.send_string(ze.set_size(4))
+            elif event.key == pygame.K_t:
+                PATIENTS[name].brush_size = 5
+                pub.send_string(ze.set_size(5))
+            elif event.key == pygame.K_y:
+                PATIENTS[name].brush_size = 6
+                pub.send_string(ze.set_size(6))
+
+
+        elif event.type == pygame.KEYUP:
+            if event.key == pygame.K_UP:
+                keydown_up = False
+            elif event.key == pygame.K_DOWN:
+                keydown_down = False
+            elif event.key == pygame.K_RIGHT:
+                keydown_right = False
+            elif event.key == pygame.K_LEFT:
+                keydown_left = False
+
+        """ Origin is a bit buggy
+        if keydown_up:
+            PATIENTS[name].origin_y -= 20
+        if keydown_down:
+            PATIENTS[name].origin_y += 20
+        if keydown_left:
+            PATIENTS[name].origin_x -= 20
+        if keydown_right:
+            PATIENTS[name].origin_x += 20
+
+        if keydown_up or keydown_down or keydown_left or keydown_right:
+            msg = ze.origin(PATIENTS[name].origin_x, PATIENTS[name].origin_y)
+            pub.send_string(msg)
+        """
+
+    pub.close()
+
+def handle_libinput_events(name, pub, ze, screen):
+    global RUNNING
+
     li = python_libinput.libinput()
     assert li.start()
 
-    print("Listening to pygame events...")
+    print("Listening to libinput events...")
     while RUNNING:
-        # Non-blocking polling of events
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                print("Received quit!")
-                RUNNING = False
-                break
-
-            if event.type == pygame.MOUSEMOTION:
-                w_x, w_y = event.pos
-                PATIENTS[name].wacom_x = w_x
-                PATIENTS[name].wacom_y = w_y
-                if PATIENTS[name].down:
-                    brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
-                    PATIENTS[name].mouse_track[-1].append(event.pos)
-                pub.send_string(ze.mouse_motion(w_x, w_y))
-
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                PATIENTS[name].down = True
-                PATIENTS[name].mouse_track.append([])
-                pub.send_string(ze.mouse_down())
-
-            elif event.type == pygame.MOUSEBUTTONUP:
-                PATIENTS[name].down = False
-                pub.send_string(ze.mouse_up())
-
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_UP:
-                    keydown_up = True
-                elif event.key == pygame.K_DOWN:
-                    keydown_down = True
-                elif event.key == pygame.K_RIGHT:
-                    keydown_right = True
-                elif event.key == pygame.K_LEFT:
-                    keydown_left = True
-
-                elif event.key == pygame.K_0:
-                    PATIENTS[name].brush_color = CLR_BLACK
-                    pub.send_string(ze.set_color(CLR_BLACK))
-                elif event.key == pygame.K_1:
-                    PATIENTS[name].brush_color = CLR_WHITE
-                    pub.send_string(ze.set_color(CLR_WHITE))
-                elif event.key == pygame.K_2:
-                    PATIENTS[name].brush_color = CLR_RED
-                    pub.send_string(ze.set_color(CLR_RED))
-                elif event.key == pygame.K_3:
-                    PATIENTS[name].brush_color = CLR_GREEN
-                    pub.send_string(ze.set_color(CLR_GREEN))
-                elif event.key == pygame.K_4:
-                    PATIENTS[name].brush_color = CLR_CYAN
-                    pub.send_string(ze.set_color(CLR_CYAN))
-                elif event.key == pygame.K_5:
-                    PATIENTS[name].brush_color = CLR_YELLOW
-                    pub.send_string(ze.set_color(CLR_YELLOW))
-
-                elif event.key == pygame.K_q:
-                    PATIENTS[name].brush_size = 1
-                    pub.send_string(ze.set_size(1))
-                elif event.key == pygame.K_w:
-                    PATIENTS[name].brush_size = 2
-                    pub.send_string(ze.set_size(2))
-                elif event.key == pygame.K_e:
-                    PATIENTS[name].brush_size = 3
-                    pub.send_string(ze.set_size(3))
-                elif event.key == pygame.K_r:
-                    PATIENTS[name].brush_size = 4
-                    pub.send_string(ze.set_size(4))
-                elif event.key == pygame.K_t:
-                    PATIENTS[name].brush_size = 5
-                    pub.send_string(ze.set_size(5))
-                elif event.key == pygame.K_y:
-                    PATIENTS[name].brush_size = 6
-                    pub.send_string(ze.set_size(6))
-
-
-            elif event.type == pygame.KEYUP:
-                if event.key == pygame.K_UP:
-                    keydown_up = False
-                elif event.key == pygame.K_DOWN:
-                    keydown_down = False
-                elif event.key == pygame.K_RIGHT:
-                    keydown_right = False
-                elif event.key == pygame.K_LEFT:
-                    keydown_left = False
-
-            """ Origin is a bit buggy
-            if keydown_up:
-                PATIENTS[name].origin_y -= 20
-            if keydown_down:
-                PATIENTS[name].origin_y += 20
-            if keydown_left:
-                PATIENTS[name].origin_x -= 20
-            if keydown_right:
-                PATIENTS[name].origin_x += 20
-
-            if keydown_up or keydown_down or keydown_left or keydown_right:
-                msg = ze.origin(PATIENTS[name].origin_x, PATIENTS[name].origin_y)
-                pub.send_string(msg)
-            """
-
         events = li.poll()
         for event in events:
             # tip up / down
@@ -189,11 +205,9 @@ def handle_pygame_events(name, pub, ze, screen):
                 if PATIENTS[name].down:
                     PATIENTS[name].mouse_track[-1].append((w_x, w_y))
                 pub.send_string(ze.mouse_motion(w_x, w_y))
-
-        sleep(0.02)
+        sleep(0.1)
 
     pub.close()
-
 
 def handle_zmq_events(name, sub):
     global RUNNING
@@ -243,7 +257,7 @@ def handle_zmq_events(name, sub):
     sub.close()
 
 
-def main(frontend, backend, name, topic):
+def main(frontend, backend, name, topic, is_libinput_enabled):
     pygame.init()
     pygame.display.set_caption("Therapy Session")
     screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
@@ -252,19 +266,34 @@ def main(frontend, backend, name, topic):
     PATIENTS[name] = p
 
     ctx = zmq.Context()
-    pub = ctx.socket(zmq.PUB)
-    pub.connect(backend)
+    ze = ZmqEvent(topic, name)
+
+    # Input event loops
+
+    pygame_pub = ctx.socket(zmq.PUB)
+    pygame_pub.connect(backend)
+
+    pygame_event_thread = Thread(target=handle_pygame_events,
+                                 args=(name, pygame_pub, ze,
+                                       is_libinput_enabled))
+    pygame_event_thread.start()
+
+    if is_libinput_enabled:
+        libinput_pub = ctx.socket(zmq.PUB)
+        libinput_pub.connect(backend)
+
+        libinput_event_thread = Thread(target=handle_libinput_events,
+                                       args=(name, libinput_pub, ze,
+                                             screen))
+        libinput_event_thread.start()
+
+    # Network event loop
 
     sub = ctx.socket(zmq.SUB)
     sub.connect(frontend)
     sub.setsockopt_string(zmq.SUBSCRIBE, topic)
 
-    ze = ZmqEvent(topic, name)
-
-    pygame_event_thread = Thread(target=handle_pygame_events, args=(name, pub, ze, screen))
     zmq_event_thread = Thread(target=handle_zmq_events, args=(name, sub))
-
-    pygame_event_thread.start()
     zmq_event_thread.start()
 
     print("Starting game loop...")
@@ -318,11 +347,13 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--frontend", default="tcp://127.0.0.1:5559")
     parser.add_argument("-b", "--backend", default="tcp://127.0.0.1:5560")
     parser.add_argument("-p", "--patient", required=True, type=str)
+    parser.add_argument("-i", "--libinput", action="store_true")
     parser.add_argument("-t", "--topic", default="Therapy")
     args = parser.parse_args()
 
     try:
-        main(args.frontend, args.backend, args.patient, args.topic)
+        main(args.frontend, args.backend, args.patient, args.topic,
+             args.libinput)
     except KeyboardInterrupt:
         print("\rCaught interrupt. Stopping...")
         RUNNING = False
