@@ -12,6 +12,13 @@ FPS = 30
 RUNNING = True
 PATIENTS = {}
 
+CLR_BLACK = (0, 0, 0)
+CLR_WHITE = (255, 255, 255)
+CLR_RED = (255, 0, 0)
+CLR_GREEN = (0, 255, 255)
+CLR_CYAN = (0, 255, 255)
+CLR_YELLOW = (255, 255, 0)
+
 class Patient:
     def __init__(self):
         self.down = False
@@ -20,6 +27,8 @@ class Patient:
         self.wacom_y = 0
         self.origin_x = 0
         self.origin_y = 0
+        self.brush_size = 1
+        self.brush_color = CLR_RED
 
 
 class ZmqEvent:
@@ -38,6 +47,12 @@ class ZmqEvent:
 
     def origin(self, x, y):
         return f"{self.topic}:{self.name}:Origin:{x}:{y}"
+
+    def set_color(self, color):
+        return f"{self.topic}:{self.name}:SetColor:{color[0]}:{color[1]}:{color[2]}"
+
+    def set_size(self, size):
+        return f"{self.topic}:{self.name}:SetSize:{size}"
 
 
 def handle_pygame_events(name, pub, ze, screen):
@@ -65,20 +80,18 @@ def handle_pygame_events(name, pub, ze, screen):
                 PATIENTS[name].wacom_x = w_x
                 PATIENTS[name].wacom_y = w_y
                 if PATIENTS[name].down:
+                    brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
                     PATIENTS[name].mouse_track[-1].append(event.pos)
-                msg = ze.mouse_motion(w_x, w_y)
-                pub.send_string(msg)
+                pub.send_string(ze.mouse_motion(w_x, w_y))
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 PATIENTS[name].down = True
                 PATIENTS[name].mouse_track.append([])
-                msg = ze.mouse_down()
-                pub.send_string(msg)
+                pub.send_string(ze.mouse_down())
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 PATIENTS[name].down = False
-                msg = ze.mouse_up()
-                pub.send_string(msg)
+                pub.send_string(ze.mouse_up())
 
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
@@ -89,6 +102,45 @@ def handle_pygame_events(name, pub, ze, screen):
                     keydown_right = True
                 elif event.key == pygame.K_LEFT:
                     keydown_left = True
+
+                elif event.key == pygame.K_0:
+                    PATIENTS[name].brush_color = CLR_BLACK
+                    pub.send_string(ze.set_color(CLR_BLACK))
+                elif event.key == pygame.K_1:
+                    PATIENTS[name].brush_color = CLR_WHITE
+                    pub.send_string(ze.set_color(CLR_WHITE))
+                elif event.key == pygame.K_2:
+                    PATIENTS[name].brush_color = CLR_RED
+                    pub.send_string(ze.set_color(CLR_RED))
+                elif event.key == pygame.K_3:
+                    PATIENTS[name].brush_color = CLR_GREEN
+                    pub.send_string(ze.set_color(CLR_GREEN))
+                elif event.key == pygame.K_4:
+                    PATIENTS[name].brush_color = CLR_CYAN
+                    pub.send_string(ze.set_color(CLR_CYAN))
+                elif event.key == pygame.K_5:
+                    PATIENTS[name].brush_color = CLR_YELLOW
+                    pub.send_string(ze.set_color(CLR_YELLOW))
+
+                elif event.key == pygame.K_q:
+                    PATIENTS[name].brush_size = 1
+                    pub.send_string(ze.set_size(1))
+                elif event.key == pygame.K_w:
+                    PATIENTS[name].brush_size = 2
+                    pub.send_string(ze.set_size(2))
+                elif event.key == pygame.K_e:
+                    PATIENTS[name].brush_size = 3
+                    pub.send_string(ze.set_size(3))
+                elif event.key == pygame.K_r:
+                    PATIENTS[name].brush_size = 4
+                    pub.send_string(ze.set_size(4))
+                elif event.key == pygame.K_t:
+                    PATIENTS[name].brush_size = 5
+                    pub.send_string(ze.set_size(5))
+                elif event.key == pygame.K_y:
+                    PATIENTS[name].brush_size = 6
+                    pub.send_string(ze.set_size(6))
+
 
             elif event.type == pygame.KEYUP:
                 if event.key == pygame.K_UP:
@@ -122,12 +174,10 @@ def handle_pygame_events(name, pub, ze, screen):
                 if event.tip_is_down:
                     PATIENTS[name].down = True
                     PATIENTS[name].mouse_track.append([])
-                    msg = ze.mouse_down()
-                    pub.send_string(msg)
+                    pub.send_string(ze.mouse_down())
                 else:
                     PATIENTS[name].down = False
-                    msg = ze.mouse_up()
-                    pub.send_string(msg)
+                    pub.send_string(ze.mouse_up())
             # cursor move
             elif event.type == 1:
                 x, y = event.x, event.y
@@ -138,8 +188,7 @@ def handle_pygame_events(name, pub, ze, screen):
                 PATIENTS[name].wacom_y = w_y
                 if PATIENTS[name].down:
                     PATIENTS[name].mouse_track[-1].append((w_x, w_y))
-                msg = ze.mouse_motion(w_x, w_y)
-                pub.send_string(msg)
+                pub.send_string(ze.mouse_motion(w_x, w_y))
 
         sleep(0.02)
 
@@ -166,7 +215,7 @@ def handle_zmq_events(name, sub):
             PATIENTS[patient] = Patient()
 
         if event == "MouseMotion":
-            w_x, w_y = int(msg[3]), int(msg[4])
+            w_x, w_y = float(msg[3]), float(msg[4])
             PATIENTS[patient].wacom_x = w_x
             PATIENTS[patient].wacom_y = w_y
             if PATIENTS[patient].down:
@@ -183,6 +232,13 @@ def handle_zmq_events(name, sub):
             o_x, o_y = int(msg[3]), int(msg[4])
             PATIENTS[patient].origin_x = o_x
             PATIENTS[patient].origin_y = o_y
+
+        elif event == "SetColor":
+            r, g, b = int(msg[3]), int(msg[4]), int(msg[5])
+            PATIENTS[patient].brush_color = (r, g, b)
+
+        elif event == "SetSize":
+            PATIENTS[patient].brush_size = int(msg[3])
 
     sub.close()
 
@@ -211,9 +267,6 @@ def main(frontend, backend, name, topic):
     pygame_event_thread.start()
     zmq_event_thread.start()
 
-    c_red = (255,0,0)
-    c_white = (255,255,255)
-
     print("Starting game loop...")
     time_func = pygame.time.get_ticks
     last_tick = time_func() or 0
@@ -237,10 +290,13 @@ def main(frontend, backend, name, topic):
                     start = (start_x, start_y)
                     adj_end = (end_x, end_y)
 
-                    pygame.draw.line(screen, c_red, start, adj_end, width=1)
+                    pygame.draw.line(screen, CLR_RED, start, adj_end, width=1)
                     start = end
 
-            pygame.draw.circle(screen, c_white, (patient.wacom_x, patient.wacom_y), 4)
+            pygame.draw.circle(screen,
+                               patient.brush_color,
+                               (patient.wacom_x, patient.wacom_y),
+                               patient.brush_size * 2)
 
         pygame.display.flip()
 
