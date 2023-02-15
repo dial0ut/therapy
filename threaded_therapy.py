@@ -141,7 +141,7 @@ def handle_pygame_events(name, pub, ze, screen):
                 msg = ze.mouse_motion(w_x, w_y)
                 pub.send_string(msg)
 
-        sleep(0.1)
+        sleep(0.02)
 
     pub.close()
 
