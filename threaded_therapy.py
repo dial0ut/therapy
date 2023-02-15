@@ -182,7 +182,7 @@ def handle_libinput_events(name, pub, ze, screen):
     assert li.start()
 
     print("Listening to libinput events...")
-    while RUNNING:
+    while RUNNING and li.wait() > -1:
         events = li.poll()
         for event in events:
             # tip up / down
@@ -206,7 +206,6 @@ def handle_libinput_events(name, pub, ze, screen):
                     brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
                     PATIENTS[name].mouse_track[-1].append((brush, (w_x, w_y)))
                 pub.send_string(ze.mouse_motion(w_x, w_y))
-        li.wait()
 
     pub.close()
 
