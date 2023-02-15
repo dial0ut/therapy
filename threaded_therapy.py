@@ -15,7 +15,7 @@ PATIENTS = {}
 CLR_BLACK = (0, 0, 0)
 CLR_WHITE = (255, 255, 255)
 CLR_RED = (255, 0, 0)
-CLR_GREEN = (0, 255, 255)
+CLR_GREEN = (0, 255, 0)
 CLR_CYAN = (0, 255, 255)
 CLR_YELLOW = (255, 255, 0)
 
@@ -81,7 +81,7 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
             PATIENTS[name].wacom_y = w_y
             if PATIENTS[name].down:
                 brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
-                PATIENTS[name].mouse_track[-1].append(event.pos)
+                PATIENTS[name].mouse_track[-1].append((brush, event.pos))
             pub.send_string(ze.mouse_motion(w_x, w_y))
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -203,7 +203,8 @@ def handle_libinput_events(name, pub, ze, screen):
                 PATIENTS[name].wacom_x = w_x
                 PATIENTS[name].wacom_y = w_y
                 if PATIENTS[name].down:
-                    PATIENTS[name].mouse_track[-1].append((w_x, w_y))
+                    brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
+                    PATIENTS[name].mouse_track[-1].append((brush, (w_x, w_y)))
                 pub.send_string(ze.mouse_motion(w_x, w_y))
         sleep(0.1)
 
@@ -233,7 +234,8 @@ def handle_zmq_events(name, sub):
             PATIENTS[patient].wacom_x = w_x
             PATIENTS[patient].wacom_y = w_y
             if PATIENTS[patient].down:
-                PATIENTS[patient].mouse_track[-1].append((w_x, w_y))
+                brush = (PATIENTS[patient].brush_size, PATIENTS[patient].brush_color)
+                PATIENTS[patient].mouse_track[-1].append((brush, (w_x, w_y)))
 
         elif event == "MouseDown":
             PATIENTS[patient].down = True
@@ -306,10 +308,12 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
             for segment in patient.mouse_track:
                 if not segment:
                     continue
+
                 start = segment[0]
+                size, clr = start[0]
                 for end in segment[1:]:
-                    start_x, start_y = start
-                    end_x, end_y = end
+                    start_x, start_y = start[1]
+                    end_x, end_y = end[1]
 
                     start_x += patient.origin_x
                     start_y += patient.origin_y
@@ -319,8 +323,8 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
                     start = (start_x, start_y)
                     adj_end = (end_x, end_y)
 
-                    pygame.draw.line(screen, CLR_RED, start, adj_end, width=1)
-                    start = end
+                    pygame.draw.line(screen, clr, start, adj_end, width=size)
+                    start = ((size, clr), end[1])
 
             pygame.draw.circle(screen,
                                patient.brush_color,
