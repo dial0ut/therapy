@@ -310,20 +310,21 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
 
                 start = segment[0]
                 size, clr = start[0]
-                for end in segment[1:]:
-                    start_x, start_y = start[1]
-                    end_x, end_y = end[1]
+                start_x, start_y = start[1]
+                start_x += patient.origin_x
+                start_y += patient.origin_y
 
-                    start_x += patient.origin_x
-                    start_y += patient.origin_y
+                for end in segment[1:]:
+                    end_x, end_y = end[1]
                     end_x += patient.origin_x
                     end_y += patient.origin_y
 
-                    start = (start_x, start_y)
-                    adj_end = (end_x, end_y)
+                    pygame.draw.line(screen, clr,
+                                     (start_x, start_y),
+                                     (end_x, end_y),
+                                     width=size)
 
-                    pygame.draw.line(screen, clr, start, adj_end, width=size)
-                    start = ((size, clr), end[1])
+                    start_x, start_y = end[1]
 
             pygame.draw.circle(screen,
                                patient.brush_color,
