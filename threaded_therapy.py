@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from argparse import ArgumentParser
+from enum import Enum
 from threading import Thread
-from time import sleep
 
 import pygame
 import zmq
@@ -30,6 +30,13 @@ class Patient:
         self.brush_size = 1
         self.brush_color = CLR_RED
 
+class Event(Enum):
+    MOUSE_MOTION = 1
+    MOUSE_DOWN = 2
+    MOUSE_UP = 3
+    ORIGIN = 4
+    SET_COLOR = 5
+    SET_SIZE = 6
 
 class ZmqEvent:
     def __init__(self, topic, name):
@@ -37,22 +44,22 @@ class ZmqEvent:
         self.name = name
 
     def mouse_motion(self, x, y):
-        return f"{self.topic}:{self.name}:MouseMotion:{x}:{y}"
+        return f"{self.topic}:{self.name}:{Event.MOUSE_MOTION}:{x}:{y}"
 
     def mouse_down(self):
-        return f"{self.topic}:{self.name}:MouseDown"
+        return f"{self.topic}:{self.name}:{Event.MOUSE_DOWN}"
 
     def mouse_up(self):
-        return f"{self.topic}:{self.name}:MouseUp"
+        return f"{self.topic}:{self.name}:{Event.MOUSE_UP}"
 
     def origin(self, x, y):
-        return f"{self.topic}:{self.name}:Origin:{x}:{y}"
+        return f"{self.topic}:{self.name}:{Event.ORIGIN}:{x}:{y}"
 
     def set_color(self, color):
-        return f"{self.topic}:{self.name}:SetColor:{color[0]}:{color[1]}:{color[2]}"
+        return f"{self.topic}:{self.name}:{Event.SET_COLOR}:{color[0]}:{color[1]}:{color[2]}"
 
     def set_size(self, size):
-        return f"{self.topic}:{self.name}:SetSize:{size}"
+        return f"{self.topic}:{self.name}:{Event.SET_SIZE}:{size}"
 
 
 def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
@@ -72,7 +79,7 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
             RUNNING = False
             break
 
-        elif event.type == pygame.MOUSEMOTION:
+        if event.type == pygame.MOUSEMOTION:
             if is_libbinput_enabled:
                 continue
 
@@ -175,9 +182,8 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
 
     pub.close()
 
-def handle_libinput_events(name, pub, ze, screen):
-    global RUNNING
 
+def handle_libinput_events(name, pub, ze, screen):
     li = python_libinput.libinput()
     assert li.start()
 
@@ -209,9 +215,8 @@ def handle_libinput_events(name, pub, ze, screen):
 
     pub.close()
 
-def handle_zmq_events(name, sub):
-    global RUNNING
 
+def handle_zmq_events(name, sub):
     print("Listening to ZMQ events...")
     while RUNNING:
         msg = sub.recv_string()  # This hangs once when RUNNING=False
@@ -228,7 +233,7 @@ def handle_zmq_events(name, sub):
         if not PATIENTS.get(patient):
             PATIENTS[patient] = Patient()
 
-        if event == "MouseMotion":
+        if event == Event.MOUSE_MOTION:
             w_x, w_y = float(msg[3]), float(msg[4])
             PATIENTS[patient].wacom_x = w_x
             PATIENTS[patient].wacom_y = w_y
@@ -236,23 +241,23 @@ def handle_zmq_events(name, sub):
                 brush = (PATIENTS[patient].brush_size, PATIENTS[patient].brush_color)
                 PATIENTS[patient].mouse_track[-1].append((brush, (w_x, w_y)))
 
-        elif event == "MouseDown":
+        elif event == Event.MOUSE_DOWN:
             PATIENTS[patient].down = True
             PATIENTS[patient].mouse_track.append([])
 
-        elif event == "MouseUp":
+        elif event == Event.MOUSE_UP:
             PATIENTS[patient].down = False
 
-        elif event == "Origin":
+        elif event == Event.ORIGIN:
             o_x, o_y = int(msg[3]), int(msg[4])
             PATIENTS[patient].origin_x = o_x
             PATIENTS[patient].origin_y = o_y
 
-        elif event == "SetColor":
+        elif event == Event.SET_COLOR:
             r, g, b = int(msg[3]), int(msg[4]), int(msg[5])
             PATIENTS[patient].brush_color = (r, g, b)
 
-        elif event == "SetSize":
+        elif event == Event.SET_SIZE:
             PATIENTS[patient].brush_size = int(msg[3])
 
     sub.close()
@@ -261,7 +266,9 @@ def handle_zmq_events(name, sub):
 def main(frontend, backend, name, topic, is_libinput_enabled):
     pygame.init()
     pygame.display.set_caption("Therapy Session")
-    screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
+
+    flags = pygame.RESIZABLE | pygame.DOUBLEBUF
+    screen = pygame.display.set_mode((800, 600), flags, 8)
 
     p = Patient()
     PATIENTS[name] = p
@@ -289,19 +296,17 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
         libinput_event_thread.start()
 
     # Network event loop
-
     sub = ctx.socket(zmq.SUB)
     sub.connect(frontend)
     sub.setsockopt_string(zmq.SUBSCRIBE, topic)
-
     zmq_event_thread = Thread(target=handle_zmq_events, args=(name, sub))
     zmq_event_thread.start()
 
     print("Starting game loop...")
-    time_func = pygame.time.get_ticks
-    last_tick = time_func() or 0
+    clock = pygame.time.Clock()
     while RUNNING:
-        screen.fill(pygame.Color("black"))
+        surface = pygame.display.get_surface()
+        surface.fill(pygame.Color("black"))
 
         for patient in PATIENTS.values():
             for segment in patient.mouse_track:
@@ -326,20 +331,14 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
 
                     start_x, start_y = end[1]
 
-            pygame.draw.circle(screen,
+            pygame.draw.circle(surface,
                                patient.brush_color,
                                (patient.wacom_x, patient.wacom_y),
                                patient.brush_size * 2)
 
+        screen.blit(surface, (0, 0))
         pygame.display.flip()
-
-        end_time = (1.0 / FPS) * 1000
-        current = time_func()
-        time_diff = current - last_tick
-        delay = (end_time - time_diff) / 1000
-        last_tick = current
-        delay = max(delay, 0)
-        sleep(delay)
+        clock.tick(FPS)
 
     pygame_event_thread.join()
     #zmq_event_thread.join()
@@ -352,7 +351,7 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--backend", default="tcp://127.0.0.1:5560")
     parser.add_argument("-p", "--patient", required=True, type=str)
     parser.add_argument("-i", "--libinput", action="store_true")
-    parser.add_argument("-t", "--topic", default="Therapy")
+    parser.add_argument("-t", "--topic", default="T")
     args = parser.parse_args()
 
     try:
