@@ -87,8 +87,7 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
             PATIENTS[name].wacom_x = w_x
             PATIENTS[name].wacom_y = w_y
             if PATIENTS[name].down:
-                brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
-                PATIENTS[name].mouse_track[-1].append((brush, event.pos))
+                PATIENTS[name].mouse_track[-1][1].append(event.pos)
             pub.send_string(ze.mouse_motion(w_x, w_y))
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -96,7 +95,8 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
                 continue
 
             PATIENTS[name].down = True
-            PATIENTS[name].mouse_track.append([])
+            brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
+            PATIENTS[name].mouse_track.append((brush, []))
             pub.send_string(ze.mouse_down())
 
         elif event.type == pygame.MOUSEBUTTONUP:
@@ -195,7 +195,8 @@ def handle_libinput_events(name, pub, ze, screen):
             if event.type == 0:
                 if event.tip_is_down:
                     PATIENTS[name].down = True
-                    PATIENTS[name].mouse_track.append([])
+                    brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
+                    PATIENTS[name].mouse_track.append((brush, []))
                     pub.send_string(ze.mouse_down())
                 else:
                     PATIENTS[name].down = False
@@ -209,8 +210,7 @@ def handle_libinput_events(name, pub, ze, screen):
                 PATIENTS[name].wacom_x = w_x
                 PATIENTS[name].wacom_y = w_y
                 if PATIENTS[name].down:
-                    brush = (PATIENTS[name].brush_size, PATIENTS[name].brush_color)
-                    PATIENTS[name].mouse_track[-1].append((brush, (w_x, w_y)))
+                    PATIENTS[name].mouse_track[-1][1].append((w_x, w_y))
                 pub.send_string(ze.mouse_motion(w_x, w_y))
 
     pub.close()
@@ -238,12 +238,12 @@ def handle_zmq_events(name, sub):
             PATIENTS[patient].wacom_x = w_x
             PATIENTS[patient].wacom_y = w_y
             if PATIENTS[patient].down:
-                brush = (PATIENTS[patient].brush_size, PATIENTS[patient].brush_color)
-                PATIENTS[patient].mouse_track[-1].append((brush, (w_x, w_y)))
+                PATIENTS[patient].mouse_track[-1][1].append((w_x, w_y))
 
         elif event == Event.MOUSE_DOWN:
             PATIENTS[patient].down = True
-            PATIENTS[patient].mouse_track.append([])
+            brush = (PATIENTS[patient].brush_size, PATIENTS[patient].brush_color)
+            PATIENTS[patient].mouse_track.append((brush, []))
 
         elif event == Event.MOUSE_UP:
             PATIENTS[patient].down = False
@@ -309,18 +309,18 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
         surface.fill(pygame.Color("black"))
 
         for patient in PATIENTS.values():
-            for segment in patient.mouse_track:
+            for brush, segment in patient.mouse_track:
                 if not segment:
                     continue
 
                 start = segment[0]
-                size, clr = start[0]
-                start_x, start_y = start[1]
+                size, clr = brush
+                start_x, start_y = start
                 start_x += patient.origin_x
                 start_y += patient.origin_y
 
                 for end in segment[1:]:
-                    end_x, end_y = end[1]
+                    end_x, end_y = end
                     end_x += patient.origin_x
                     end_y += patient.origin_y
 
@@ -329,7 +329,7 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
                                      (end_x, end_y),
                                      width=size)
 
-                    start_x, start_y = end[1]
+                    start_x, start_y = end
 
             pygame.draw.circle(surface,
                                patient.brush_color,
