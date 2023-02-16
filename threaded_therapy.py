@@ -268,7 +268,7 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
     pygame.display.set_caption("Therapy Session")
 
     flags = pygame.RESIZABLE | pygame.DOUBLEBUF
-    screen = pygame.display.set_mode((800, 600), flags, 8)
+    screen = pygame.display.set_mode((800, 600), flags)
 
     p = Patient()
     PATIENTS[name] = p
