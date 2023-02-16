@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from argparse import ArgumentParser
-from enum import Enum
+from enum import IntEnum, auto
 from threading import Thread
 
 import pygame
@@ -30,13 +30,13 @@ class Patient:
         self.brush_size = 1
         self.brush_color = CLR_RED
 
-class Event(Enum):
+class Event(IntEnum):
     MOUSE_MOTION = 1
-    MOUSE_DOWN = 2
-    MOUSE_UP = 3
-    ORIGIN = 4
-    SET_COLOR = 5
-    SET_SIZE = 6
+    MOUSE_DOWN = auto()
+    MOUSE_UP = auto()
+    ORIGIN = auto()
+    SET_COLOR = auto()
+    SET_SIZE = auto()
 
 class ZmqEvent:
     def __init__(self, topic, name):
@@ -44,22 +44,22 @@ class ZmqEvent:
         self.name = name
 
     def mouse_motion(self, x, y):
-        return f"{self.topic}:{self.name}:{Event.MOUSE_MOTION}:{x}:{y}"
+        return f"{self.topic}:{self.name}:{Event.MOUSE_MOTION.value}:{x}:{y}"
 
     def mouse_down(self):
-        return f"{self.topic}:{self.name}:{Event.MOUSE_DOWN}"
+        return f"{self.topic}:{self.name}:{Event.MOUSE_DOWN.value}"
 
     def mouse_up(self):
-        return f"{self.topic}:{self.name}:{Event.MOUSE_UP}"
+        return f"{self.topic}:{self.name}:{Event.MOUSE_UP.value}"
 
     def origin(self, x, y):
-        return f"{self.topic}:{self.name}:{Event.ORIGIN}:{x}:{y}"
+        return f"{self.topic}:{self.name}:{Event.ORIGIN.value}:{x}:{y}"
 
     def set_color(self, color):
-        return f"{self.topic}:{self.name}:{Event.SET_COLOR}:{color[0]}:{color[1]}:{color[2]}"
+        return f"{self.topic}:{self.name}:{Event.SET_COLOR.value}:{color[0]}:{color[1]}:{color[2]}"
 
     def set_size(self, size):
-        return f"{self.topic}:{self.name}:{Event.SET_SIZE}:{size}"
+        return f"{self.topic}:{self.name}:{Event.SET_SIZE.value}:{size}"
 
 
 def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
@@ -224,7 +224,7 @@ def handle_zmq_events(name, sub):
 
         _topic = msg[0]
         patient = msg[1]
-        event = msg[2]
+        event = Event(int(msg[2]))
 
         # Skip ourselves
         if name == patient:
