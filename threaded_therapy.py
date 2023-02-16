@@ -31,7 +31,8 @@ class Patient:
         self.brush_color = CLR_RED
 
 class Event(IntEnum):
-    MOUSE_MOTION = 1
+    CLOSE = 1
+    MOUSE_MOTION = auto()
     MOUSE_DOWN = auto()
     MOUSE_UP = auto()
     ORIGIN = auto()
@@ -60,6 +61,9 @@ class ZmqEvent:
 
     def set_size(self, size):
         return f"{self.topic}:{self.name}:{Event.SET_SIZE.value}:{size}"
+
+    def close(self):
+        return f"{self.topic}:{self.name}:{Event.CLOSE.value}"
 
 
 def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
@@ -180,6 +184,7 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
             pub.send_string(msg)
         """
 
+    pub.send_string(ze.close())
     pub.close()
 
 
@@ -340,8 +345,8 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
         pygame.display.flip()
         clock.tick(FPS)
 
+    zmq_event_thread.join()
     pygame_event_thread.join()
-    #zmq_event_thread.join()
     pygame.quit()
 
 
