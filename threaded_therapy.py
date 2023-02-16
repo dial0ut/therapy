@@ -324,7 +324,7 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
                     end_x += patient.origin_x
                     end_y += patient.origin_y
 
-                    pygame.draw.line(screen, clr,
+                    pygame.draw.line(surface, clr,
                                      (start_x, start_y),
                                      (end_x, end_y),
                                      width=size)
