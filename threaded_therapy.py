@@ -38,6 +38,7 @@ class Event(IntEnum):
     ORIGIN = auto()
     SET_COLOR = auto()
     SET_SIZE = auto()
+    UNDO = auto()
 
 class ZmqEvent:
     def __init__(self, topic, name):
@@ -64,6 +65,9 @@ class ZmqEvent:
 
     def close(self):
         return f"{self.topic}:{self.name}:{Event.CLOSE.value}"
+
+    def undo(self):
+        return f"{self.topic}:{self.name}:{Event.UNDO.value}"
 
 
 def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
@@ -157,6 +161,15 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
             elif event.key == pygame.K_y:
                 PATIENTS[name].brush_size = 6
                 pub.send_string(ze.set_size(6))
+
+            elif event.key == pygame.K_z:
+                trk = PATIENTS[name].mouse_track
+                try:
+                    idx = len(trk) - 1 - next(i for i, tpl in enumerate(trk[::-1]) if tpl[1] == [])
+                    pub.send_string(ze.undo())
+                except StopIteration:
+                    idx = len(trk) - 1
+                PATIENTS[name].mouse_track = trk[:idx]
 
 
         elif event.type == pygame.KEYUP:
@@ -264,6 +277,14 @@ def handle_zmq_events(name, sub):
 
         elif event == Event.SET_SIZE:
             PATIENTS[patient].brush_size = int(msg[3])
+
+        elif event == Event.UNDO:
+            trk = PATIENTS[patient].mouse_track
+            try:
+                idx = len(trk) - 1 - next(i for i, tpl in enumerate(trk[::-1]) if tpl[1] == [])
+            except StopIteration:
+                idx = len(trk) - 1
+            PATIENTS[patient].mouse_track = trk[:idx]
 
     sub.close()
 
