@@ -19,6 +19,11 @@ CLR_GREEN = (0, 255, 0)
 CLR_CYAN = (0, 255, 255)
 CLR_YELLOW = (255, 255, 0)
 
+keydown_up = False
+keydown_down = False
+keydown_right = False
+keydown_left = False
+
 class Patient:
     def __init__(self):
         self.down = False
@@ -72,11 +77,7 @@ class ZmqEvent:
 
 def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
     global RUNNING
-
-    keydown_up = False
-    keydown_down = False
-    keydown_right = False
-    keydown_left = False
+    global keydown_up, keydown_down, keydown_right, keydown_left
 
     print("Listening to pygame events...")
     while RUNNING:
@@ -330,9 +331,20 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
 
     print("Starting game loop...")
     clock = pygame.time.Clock()
+    origin_x, origin_y = 0, 0
     while RUNNING:
         surface = pygame.display.get_surface()
         surface.fill(pygame.Color("black"))
+
+        if keydown_up:
+            origin_y -= 10
+        elif keydown_down:
+            origin_y += 10
+
+        if keydown_left:
+            origin_x -= 10
+        elif keydown_right:
+            origin_x += 10
 
         for patient in PATIENTS.values():
             for brush, segment in patient.mouse_track:
@@ -342,24 +354,26 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
                 start = segment[0]
                 size, clr = brush
                 start_x, start_y = start
-                start_x += patient.origin_x
-                start_y += patient.origin_y
+                start_x += origin_x
+                start_y += origin_y
 
                 for end in segment[1:]:
                     end_x, end_y = end
-                    end_x += patient.origin_x
-                    end_y += patient.origin_y
+                    end_x += origin_x
+                    end_y += origin_y
 
                     pygame.draw.line(surface, clr,
                                      (start_x, start_y),
                                      (end_x, end_y),
                                      width=size)
 
-                    start_x, start_y = end
+                    start_x, start_y = end_x, end_y
 
+            wacom_x = patient.wacom_x + origin_x
+            wacom_y = patient.wacom_y + origin_y
             pygame.draw.circle(surface,
                                patient.brush_color,
-                               (patient.wacom_x, patient.wacom_y),
+                               (wacom_x, wacom_y),
                                patient.brush_size * 2)
 
         screen.blit(surface, (0, 0))
