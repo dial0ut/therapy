@@ -30,8 +30,8 @@ class Patient:
         self.mouse_track = []
         self.wacom_x = 0
         self.wacom_y = 0
-        self.origin_x = 0
-        self.origin_y = 0
+        self.view_x = 0
+        self.view_y = 0
         self.brush_size = 1
         self.brush_color = CLR_RED
 
@@ -93,10 +93,13 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
                 continue
 
             w_x, w_y = event.pos
+            # Transform from local (view) to global space
+            w_x += PATIENTS[name].view_x
+            w_y += PATIENTS[name].view_y
             PATIENTS[name].wacom_x = w_x
             PATIENTS[name].wacom_y = w_y
             if PATIENTS[name].down:
-                PATIENTS[name].mouse_track[-1][1].append(event.pos)
+                PATIENTS[name].mouse_track[-1][1].append((w_x, w_y))
             pub.send_string(ze.mouse_motion(w_x, w_y))
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -185,16 +188,16 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
 
         """ Origin is a bit buggy
         if keydown_up:
-            PATIENTS[name].origin_y -= 20
+            PATIENTS[name].view_y -= 20
         if keydown_down:
-            PATIENTS[name].origin_y += 20
+            PATIENTS[name].view_y += 20
         if keydown_left:
-            PATIENTS[name].origin_x -= 20
+            PATIENTS[name].view_x -= 20
         if keydown_right:
-            PATIENTS[name].origin_x += 20
+            PATIENTS[name].view_x += 20
 
         if keydown_up or keydown_down or keydown_left or keydown_right:
-            msg = ze.origin(PATIENTS[name].origin_x, PATIENTS[name].origin_y)
+            msg = ze.origin(PATIENTS[name].view_x, PATIENTS[name].view_y)
             pub.send_string(msg)
         """
 
@@ -269,8 +272,8 @@ def handle_zmq_events(name, sub):
 
         elif event == Event.ORIGIN:
             o_x, o_y = int(msg[3]), int(msg[4])
-            PATIENTS[patient].origin_x = o_x
-            PATIENTS[patient].origin_y = o_y
+            PATIENTS[patient].view_x = o_x
+            PATIENTS[patient].view_y = o_y
 
         elif event == Event.SET_COLOR:
             r, g, b = int(msg[3]), int(msg[4]), int(msg[5])
@@ -331,20 +334,20 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
 
     print("Starting game loop...")
     clock = pygame.time.Clock()
-    origin_x, origin_y = 0, 0
     while RUNNING:
         surface = pygame.display.get_surface()
         surface.fill(pygame.Color("black"))
 
+        # We do these here because the input event loop is blocking
         if keydown_up:
-            origin_y -= 10
+            p.view_y -= 10
         elif keydown_down:
-            origin_y += 10
+            p.view_y += 10
 
         if keydown_left:
-            origin_x -= 10
+            p.view_x -= 10
         elif keydown_right:
-            origin_x += 10
+            p.view_x += 10
 
         for patient in PATIENTS.values():
             for brush, segment in patient.mouse_track:
@@ -354,13 +357,13 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
                 start = segment[0]
                 size, clr = brush
                 start_x, start_y = start
-                start_x += origin_x
-                start_y += origin_y
+                start_x -= p.view_x
+                start_y -= p.view_y
 
                 for end in segment[1:]:
                     end_x, end_y = end
-                    end_x += origin_x
-                    end_y += origin_y
+                    end_x -= p.view_x
+                    end_y -= p.view_y
 
                     pygame.draw.line(surface, clr,
                                      (start_x, start_y),
@@ -369,8 +372,9 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
 
                     start_x, start_y = end_x, end_y
 
-            wacom_x = patient.wacom_x + origin_x
-            wacom_y = patient.wacom_y + origin_y
+            # Transform from global to local (view) space
+            wacom_x = patient.wacom_x - p.view_x
+            wacom_y = patient.wacom_y - p.view_y
             pygame.draw.circle(surface,
                                patient.brush_color,
                                (wacom_x, wacom_y),
