@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from argparse import ArgumentParser
 from enum import IntEnum, auto
-from threading import Thread
+from threading import Thread, Lock
 
 import pygame
 import zmq
@@ -23,6 +23,9 @@ keydown_up = False
 keydown_down = False
 keydown_right = False
 keydown_left = False
+
+buffer_lock = Lock()
+buffer = None
 
 class Patient:
     def __init__(self):
@@ -100,6 +103,7 @@ def handle_pygame_events(name, pub, ze, is_libbinput_enabled):
             PATIENTS[name].wacom_y = w_y
             if PATIENTS[name].down:
                 PATIENTS[name].mouse_track[-1][1].append((w_x, w_y))
+                draw_last_segment(name, name)
             pub.send_string(ze.mouse_motion(w_x, w_y))
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -261,6 +265,7 @@ def handle_zmq_events(name, sub):
             PATIENTS[patient].wacom_y = w_y
             if PATIENTS[patient].down:
                 PATIENTS[patient].mouse_track[-1][1].append((w_x, w_y))
+                draw_last_segment(name, patient)
 
         elif event == Event.MOUSE_DOWN:
             PATIENTS[patient].down = True
@@ -290,15 +295,72 @@ def handle_zmq_events(name, sub):
                 idx = len(trk) - 1
             PATIENTS[patient].mouse_track = trk[:idx]
 
+            # redraw everything
+            redraw(name)
+
     sub.close()
 
+def redraw(name):
+    p = PATIENTS[name]
+    with buffer_lock:
+        assert buffer is not None
+        buffer.fill(pygame.Color("black"))
+
+        for patient in PATIENTS.values():
+            for brush, segment in patient.mouse_track:
+                if not segment:
+                    continue
+
+                start = segment[0]
+                size, clr = brush
+                start_x, start_y = start
+                start_x -= p.view_x
+                start_y -= p.view_y
+
+                for end in segment[1:]:
+                    end_x, end_y = end
+                    end_x -= p.view_x
+                    end_y -= p.view_y
+
+                    pygame.draw.line(buffer, clr,
+                                     (start_x, start_y),
+                                     (end_x, end_y),
+                                     width=size)
+
+                    start_x, start_y = end_x, end_y
+
+def draw_last_segment(name, patient):
+    p = PATIENTS[name]
+    with buffer_lock:
+        assert buffer is not None
+
+        brush, segment = PATIENTS[patient].mouse_track[-1]
+        if len(segment) < 2:
+            return
+
+        start, end = segment[-2], segment[-1]
+        size, clr = brush
+        start_x, start_y = start
+        start_x -= p.view_x
+        start_y -= p.view_y
+        end_x, end_y = end
+        end_x -= p.view_x
+        end_y -= p.view_y
+
+        pygame.draw.line(buffer, clr,
+                         (start_x, start_y),
+                         (end_x, end_y),
+                         width=size)
 
 def main(frontend, backend, name, topic, is_libinput_enabled):
+    global buffer
+
     pygame.init()
     pygame.display.set_caption("Therapy Session")
 
     flags = pygame.RESIZABLE | pygame.DOUBLEBUF
     screen = pygame.display.set_mode((800, 600), flags)
+    buffer = screen.copy()
 
     p = Patient()
     PATIENTS[name] = p
@@ -335,52 +397,33 @@ def main(frontend, backend, name, topic, is_libinput_enabled):
     print("Starting game loop...")
     clock = pygame.time.Clock()
     while RUNNING:
-        surface = pygame.display.get_surface()
-        surface.fill(pygame.Color("black"))
-
         # We do these here because the input event loop is blocking
         if keydown_up:
             p.view_y -= 10
+            redraw(name)
         elif keydown_down:
             p.view_y += 10
+            redraw(name)
 
         if keydown_left:
             p.view_x -= 10
+            redraw(name)
         elif keydown_right:
             p.view_x += 10
+            redraw(name)
+
+        with buffer_lock:
+            screen.blit(buffer, (0, 0))
 
         for patient in PATIENTS.values():
-            for brush, segment in patient.mouse_track:
-                if not segment:
-                    continue
-
-                start = segment[0]
-                size, clr = brush
-                start_x, start_y = start
-                start_x -= p.view_x
-                start_y -= p.view_y
-
-                for end in segment[1:]:
-                    end_x, end_y = end
-                    end_x -= p.view_x
-                    end_y -= p.view_y
-
-                    pygame.draw.line(surface, clr,
-                                     (start_x, start_y),
-                                     (end_x, end_y),
-                                     width=size)
-
-                    start_x, start_y = end_x, end_y
-
             # Transform from global to local (view) space
             wacom_x = patient.wacom_x - p.view_x
             wacom_y = patient.wacom_y - p.view_y
-            pygame.draw.circle(surface,
+            pygame.draw.circle(screen,
                                patient.brush_color,
                                (wacom_x, wacom_y),
                                patient.brush_size * 2)
 
-        screen.blit(surface, (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
 
